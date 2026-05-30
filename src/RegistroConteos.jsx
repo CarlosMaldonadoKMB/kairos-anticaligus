@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Trash2, Wifi, WifiOff } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/kairosDb'
+import { supabase } from './db/supabaseClient'
 
 // --- Constantes mock ---
 const OPERARIO = 'Juan Pérez'
@@ -284,6 +285,32 @@ export default function RegistroConteos() {
         JSON.stringify({ id, ...registro }, null, 2)
       )
       setMensajeExito(MENSAJE_EXITO)
+
+      if (navigator.onLine) {
+        try {
+          const densidadNum = parseNumeroOpcional(densidadCultivo)
+          const { error } = await supabase.from('conteos_caligus').insert({
+            rut_muestreador: rutMuestreador.trim(),
+            codigo_rna: codigoRNA.trim(),
+            densidad_cultivo:
+              densidadNum != null ? Number(densidadNum) : null,
+            tratamiento,
+            conteo_total: juveniles + adultosMoviles + hembrasOvigeras,
+          })
+
+          if (error) throw error
+          console.log('Conteo sincronizado con Supabase correctamente.')
+        } catch (supabaseError) {
+          console.log(
+            'Guardado local exitoso. No se pudo sincronizar con Supabase (offline o error de red):',
+            supabaseError?.message ?? supabaseError
+          )
+        }
+      } else {
+        console.log(
+          'Sin conexión: conteo guardado solo en base de datos local.'
+        )
+      }
     } catch (error) {
       console.error('Error al guardar en KairosDB:', error)
       window.alert(
