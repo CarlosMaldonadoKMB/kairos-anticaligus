@@ -33,6 +33,25 @@ function formatearFechaHistorial(iso) {
   }
 }
 
+/** Fecha oficial SIFA: DD/MM/AAAA (sin hora). */
+function formatearFechaSIFA(iso) {
+  try {
+    const d = new Date(iso)
+    const dd = String(d.getDate()).padStart(2, '0')
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const yyyy = d.getFullYear()
+    return `${dd}/${mm}/${yyyy}`
+  } catch {
+    return iso
+  }
+}
+
+/** RUT sin puntos, con guion (ej. 12345678-9) para validadores externos. */
+function sanitizarRut(rut) {
+  if (rut == null || rut === '') return ''
+  return String(rut).replace(/\./g, '').trim()
+}
+
 // --- Primitivos UI (estilo shadcn, solo Tailwind) ---
 
 function Card({ children, className = '' }) {
@@ -336,16 +355,16 @@ export default function RegistroConteos() {
       }
 
       const filasSIFA = registros.map((reg) => ({
-        'Fecha Conteo': formatearFechaHistorial(reg.fecha),
-        'RUT Muestreador': reg.rutMuestreador ?? '',
+        'Fecha Conteo': formatearFechaSIFA(reg.fecha),
+        'RUT Muestreador': sanitizarRut(reg.rutMuestreador),
         'Código RNA del Centro': reg.codigoRNA ?? '',
+        'Número de Jaula': reg.jaula ?? '',
         'Densidad de Cultivo':
           reg.densidadCultivo != null ? Number(reg.densidadCultivo) : '',
         'Esquema Tratamiento': reg.tratamiento ?? '',
-        'Total Caligus Detectados':
-          (reg.juveniles ?? 0) +
-          (reg.adultosMoviles ?? 0) +
-          (reg.hembrasOvigeras ?? 0),
+        'Caligus Juveniles': reg.juveniles ?? 0,
+        'Caligus Adultos Móviles': reg.adultosMoviles ?? 0,
+        'Hembras Ovígeras (HO)': reg.hembrasOvigeras ?? 0,
       }))
 
       const hoja = XLSX.utils.json_to_sheet(filasSIFA)
