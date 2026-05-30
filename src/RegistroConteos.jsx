@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Trash2, Wifi, WifiOff } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import * as XLSX from 'xlsx'
 import { db } from './db/kairosDb'
 import { supabase } from './db/supabaseClient'
 
@@ -116,6 +117,8 @@ function Button({
       'bg-gray-200 text-gray-900 border-2 border-gray-400 shadow-sm hover:bg-gray-300 active:bg-gray-400',
     danger:
       'bg-red-600 text-white border-2 border-red-700 hover:bg-red-700 active:bg-red-800',
+    teal:
+      'bg-teal-700 text-white border-2 border-teal-800 hover:bg-teal-800 active:bg-teal-900',
   }
   return (
     <button
@@ -222,6 +225,7 @@ export default function RegistroConteos() {
   const [guardando, setGuardando] = useState(false)
   const [mensajeExito, setMensajeExito] = useState('')
   const [eliminandoId, setEliminandoId] = useState(null)
+  const [exportando, setExportando] = useState(false)
 
   const historial = useLiveQuery(() => db.conteos.toArray())
 
@@ -318,6 +322,46 @@ export default function RegistroConteos() {
       )
     } finally {
       setGuardando(false)
+    }
+  }
+
+  const exportarToExcelSIFA = async () => {
+    try {
+      setExportando(true)
+      const registros = await db.conteos.toArray()
+
+      if (registros.length === 0) {
+        window.alert('No hay registros guardados localmente para exportar.')
+        return
+      }
+
+      const filasSIFA = registros.map((reg) => ({
+        'Fecha Conteo': formatearFechaHistorial(reg.fecha),
+        'RUT Muestreador': reg.rutMuestreador ?? '',
+        'Código RNA del Centro': reg.codigoRNA ?? '',
+        'Densidad de Cultivo':
+          reg.densidadCultivo != null ? Number(reg.densidadCultivo) : '',
+        'Esquema Tratamiento': reg.tratamiento ?? '',
+        'Total Caligus Detectados':
+          (reg.juveniles ?? 0) +
+          (reg.adultosMoviles ?? 0) +
+          (reg.hembrasOvigeras ?? 0),
+      }))
+
+      const hoja = XLSX.utils.json_to_sheet(filasSIFA)
+      const libro = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(libro, hoja, 'Conteos SIFA')
+
+      const fechaActual = new Date().toISOString().slice(0, 10)
+      const nombreArchivo = `SIFA_Caligus_ANEXO_${fechaActual}.xlsx`
+      XLSX.writeFile(libro, nombreArchivo)
+    } catch (error) {
+      console.error('Error al exportar planilla SIFA:', error)
+      window.alert(
+        `No se pudo generar la planilla SIFA: ${error?.message ?? 'Error desconocido'}`
+      )
+    } finally {
+      setExportando(false)
     }
   }
 
@@ -577,12 +621,22 @@ export default function RegistroConteos() {
       <hr className="my-8 border-gray-300" />
 
       <section aria-labelledby="titulo-historial">
-        <h2
-          id="titulo-historial"
-          className="text-xl font-bold text-gray-900 mb-4"
-        >
-          Historial de Registros Locales
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h2
+            id="titulo-historial"
+            className="text-xl font-bold text-gray-900"
+          >
+            Historial de Registros Locales
+          </h2>
+          <Button
+            variant="teal"
+            onClick={exportarToExcelSIFA}
+            disabled={exportando || historial === undefined}
+            className="h-12 px-4 text-sm font-bold whitespace-nowrap"
+          >
+            {exportando ? 'Generando…' : '📥 Exportar Planilla SIFA'}
+          </Button>
+        </div>
 
         {historial === undefined ? (
           <p className="text-sm text-gray-500">Cargando historial…</p>
