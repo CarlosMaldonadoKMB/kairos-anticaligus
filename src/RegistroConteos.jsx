@@ -4,9 +4,9 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import * as XLSX from 'xlsx'
 import { db } from './db/kairosDb'
 import { supabase } from './db/supabaseClient'
+import { useAuth } from './context/AuthContext';
 
 // --- Constantes mock ---
-const OPERARIO = 'Juan Pérez'
 const CENTROS = ['Huelmo', 'Pargua', 'Quitralco']
 const JAULAS = ['101', '102', '103', '104']
 const TRATAMIENTOS = [
@@ -224,6 +224,8 @@ function ContadorCategoria({
 // --- Vista principal ---
 
 export default function RegistroConteos() {
+  const { session } = useAuth(); // <--- Agrega esta línea
+  
   const [centro, setCentro] = useState('Huelmo')
   const [jaula, setJaula] = useState('101')
   const [rutMuestreador, setRutMuestreador] = useState('')
@@ -282,7 +284,7 @@ export default function RegistroConteos() {
     const fecha = new Date().toISOString()
 
     const registro = {
-      operario: OPERARIO,
+      operario: session?.user?.email,
       fecha,
       centro,
       jaula,
@@ -440,7 +442,7 @@ export default function RegistroConteos() {
       <Card className="flex flex-row items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-gray-900">
-            Operario: {OPERARIO}
+            Operario: {session?.user?.email}
           </p>
           <p className="text-sm text-gray-700 capitalize">{fechaFormateada}</p>
         </div>
