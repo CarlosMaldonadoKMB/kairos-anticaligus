@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx'
 import { db } from './db/kairosDb'
 import { supabase } from './db/supabaseClient'
 import { useAuth } from './context/AuthContext';
+import Navbar from './componentes/navbar';
 
 // --- Constantes mock ---
 const CENTROS = ['Huelmo', 'Pargua', 'Quitralco']
@@ -317,10 +318,13 @@ export default function RegistroConteos() {
           const { error } = await supabase.from('conteos_caligus').insert({
             rut_muestreador: rutMuestreador.trim(),
             codigo_rna: codigoRNA.trim(),
-            densidad_cultivo:
-              densidadNum != null ? Number(densidadNum) : null,
+            densidad_cultivo: densidadNum != null ? Number(densidadNum) : null,
             tratamiento,
             conteo_total: juveniles + adultosMoviles + hembrasOvigeras,
+            // NUEVAS COLUMNAS:
+            centro: centro,
+            jaula: jaula,
+            hembras_ovigeras: hembrasOvigeras
           })
 
           if (error) throw error
@@ -425,39 +429,42 @@ export default function RegistroConteos() {
     historial?.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)) ??
     []
 
-  return (
-    <div className="max-w-lg mx-auto w-full px-4 pb-8 space-y-4 text-left text-gray-900 box-border">
-      {/* Toast temporal de éxito */}
-      {mensajeExito && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed top-4 left-4 right-4 z-50 mx-auto max-w-lg rounded-lg border-2 border-green-700 bg-green-100 px-4 py-3 text-center text-base font-bold text-green-900 shadow-lg"
-        >
-          {mensajeExito}
-        </div>
-      )}
-
-      {/* Barra superior: contexto operario, fecha y red */}
-      <Card className="flex flex-row items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-gray-900">
-            Operario: {session?.user?.email}
-          </p>
-          <p className="text-sm text-gray-700 capitalize">{fechaFormateada}</p>
-        </div>
-        <div
-          className="shrink-0"
-          title={isOnline ? 'Conectado' : 'Sin conexión'}
-          aria-label={isOnline ? 'Conectado' : 'Sin conexión'}
-        >
-          {isOnline ? (
-            <Wifi className="h-8 w-8 text-gray-900" strokeWidth={2} />
-          ) : (
-            <WifiOff className="h-8 w-8 text-red-600" strokeWidth={2} />
+    return (
+      <div className="min-h-screen bg-slate-50 pb-8">
+        <Navbar /> {/* <-- Esta es la barra superior que nos permite viajar al Dashboard */}
+        
+        <div className="max-w-lg mx-auto w-full px-4 space-y-4 text-left text-gray-900 box-border mt-4">
+          {/* Toast temporal de éxito */}
+          {mensajeExito && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="fixed top-4 left-4 right-4 z-50 mx-auto max-w-lg rounded-lg border-2 border-green-700 bg-green-100 px-4 py-3 text-center text-base font-bold text-green-900 shadow-lg"
+            >
+              {mensajeExito}
+            </div>
           )}
-        </div>
-      </Card>
+  
+          {/* Barra superior: contexto operario, fecha y red */}
+          <Card className="flex flex-row items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">
+                Operario: {session?.user?.email}
+              </p>
+              <p className="text-sm text-gray-700 capitalize">{fechaFormateada}</p>
+            </div>
+            <div
+              className="shrink-0"
+              title={isOnline ? 'Conectado' : 'Sin conexión'}
+              aria-label={isOnline ? 'Conectado' : 'Sin conexión'}
+            >
+              {isOnline ? (
+                <Wifi className="h-8 w-8 text-gray-900" strokeWidth={2} />
+              ) : (
+                <WifiOff className="h-8 w-8 text-red-600" strokeWidth={2} />
+              )}
+            </div>
+          </Card>
 
       {/* Sección 1: Ubicación */}
       <Card>
@@ -756,11 +763,10 @@ export default function RegistroConteos() {
                 </Card>
               ))}
             </div>
-          </>
+            </>
         )}
       </section>
+      </div>
     </div>
-  )
+  );
 }
-
-
