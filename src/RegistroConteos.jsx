@@ -346,43 +346,54 @@ export default function RegistroConteos() {
 
   const exportarToExcelSIFA = async () => {
     try {
-      setExportando(true)
-      const registros = await db.conteos.toArray()
-
-      if (registros.length === 0) {
-        window.alert('No hay registros guardados localmente para exportar.')
-        return
+      // 1. Extraer los datos reales desde tu tabla 'conteos'
+      const registrosLocales = await db.conteos.toArray(); 
+  
+      if (registrosLocales.length === 0) {
+        alert("No hay registros guardados para exportar.");
+        return;
       }
-
-      const filasSIFA = registros.map((reg) => ({
-        'Fecha Conteo': formatearFechaSIFA(reg.fecha),
-        'RUT Muestreador': sanitizarRut(reg.rutMuestreador),
-        'Código RNA del Centro': reg.codigoRNA ?? '',
-        'Número de Jaula': reg.jaula ?? '',
-        'Densidad de Cultivo':
-          reg.densidadCultivo != null ? Number(reg.densidadCultivo) : '',
-        'Esquema Tratamiento': reg.tratamiento ?? '',
-        'Caligus Juveniles': reg.juveniles ?? 0,
-        'Caligus Adultos Móviles': reg.adultosMoviles ?? 0,
-        'Hembras Ovígeras (HO)': reg.hembrasOvigeras ?? 0,
-      }))
-
-      const hoja = XLSX.utils.json_to_sheet(filasSIFA)
-      const libro = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(libro, hoja, 'Conteos SIFA')
-
-      const fechaActual = new Date().toISOString().slice(0, 10)
-      const nombreArchivo = `SIFA_Caligus_ANEXO_${fechaActual}.xlsx`
-      XLSX.writeFile(libro, nombreArchivo)
+  
+      // 2. Transformar los datos al formato normativo estricto del SIFA
+      const datosFormateados = registrosLocales.map(reg => {
+        // Limpieza de Fecha usando tu variable 'reg.fecha'
+        const dateObj = new Date(reg.fecha || Date.now());
+        const dia = String(dateObj.getDate()).padStart(2, '0');
+        const mes = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const anio = dateObj.getFullYear();
+        const fechaLimpia = `${dia}/${mes}/${anio}`;
+  
+        // Sanitizar RUT (Quitar los puntos pero conservar el guion)
+        const rutSanitizado = reg.rutMuestreador ? reg.rutMuestreador.replace(/\./g, '') : '';
+  
+        return {
+          "Fecha Conteo": fechaLimpia,
+          "RUT Muestreador": rutSanitizado,
+          "Código RNA del Centro": reg.centro || 'N/A', // Mapeado a tu campo 'centro'
+          "Número de Jaula": reg.jaula || 'N/A',        // Mapeado a tu campo 'jaula'
+          "Densidad de Cultivo": Number(reg.densidadCultivo || 0),
+          "Esquema Tratamiento": reg.tratamiento || 'TN',
+          "Caligus Juveniles": Number(reg.juveniles || 0),
+          "Caligus Adultos Móviles": Number(reg.adultosMoviles || 0),
+          "Hembras Ovígeras (HO)": Number(reg.hembrasOvigera || 0)
+        };
+      });
+  
+      // 3. Generar el archivo Excel binario usando SheetJS
+      const hoja = XLSX.utils.json_to_sheet(datosFormateados);
+      const libro = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(libro, hoja, "Conteos SIFA");
+  
+      // 4. Descarga automática con la fecha del día
+      const hoy = new Date().toISOString().split('T')[0];
+      XLSX.writeFile(libro, `SIFA_Caligus_ANEXO_${hoy}.xlsx`);
+  
+      console.log("📥 Planilla SIFA generada con desgloses sanitarios exitosamente.");
     } catch (error) {
-      console.error('Error al exportar planilla SIFA:', error)
-      window.alert(
-        `No se pudo generar la planilla SIFA: ${error?.message ?? 'Error desconocido'}`
-      )
-    } finally {
-      setExportando(false)
+      console.error("❌ Error fatal al compilar el Excel:", error);
+      alert("Hubo un problema al generar el Excel.");
     }
-  }
+  };
 
   const handleEliminar = async (id) => {
     if (
