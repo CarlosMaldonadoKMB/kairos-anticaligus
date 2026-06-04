@@ -24,20 +24,6 @@ const Login = () => {
     }
   };
 
-  const handleRegistro = async () => {
-    setLoading(true);
-    setMensaje({ tipo: '', texto: '' });
-
-    const { error } = await supabase.auth.signUp({ email, password });
-
-    if (error) {
-      setMensaje({ tipo: 'error', texto: error.message });
-    } else {
-      setMensaje({ tipo: 'exito', texto: 'Cuenta creada. Ya puedes iniciar sesión.' });
-    }
-    setLoading(false);
-  };
-
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 px-4">
       <div className="w-full max-w-md bg-slate-800 p-8 rounded-xl shadow-2xl border border-slate-700">
@@ -83,15 +69,6 @@ const Login = () => {
               className="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded hover:bg-teal-500 active:bg-teal-700 disabled:opacity-50"
             >
               {loading ? 'Procesando...' : 'Iniciar Sesión'}
-            </button>
-            
-            <button 
-              type="button"
-              onClick={handleRegistro}
-              disabled={loading}
-              className="w-full bg-transparent border-2 border-slate-600 text-slate-300 font-bold py-3 px-4 rounded hover:border-slate-500 active:bg-slate-700 disabled:opacity-50"
-            >
-              Solicitar Nueva Cuenta
             </button>
           </div>
         </form>
