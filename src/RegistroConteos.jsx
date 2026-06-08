@@ -401,6 +401,44 @@ export default function RegistroConteos() {
     }
   };
 
+  // === ¡AQUÍ ENTRA TU NUEVA FUNCIÓN DE SINCRONIZACIÓN! ===
+  const sincronizarNube = async () => {
+    try {
+      const registrosLocales = await db.conteos.toArray();
+      
+      if (registrosLocales.length === 0) {
+        alert("No hay registros nuevos para sincronizar. El semáforo ya está verde ✓");
+        return;
+      }
+
+      // Traducimos los datos al formato exacto que espera tu tabla 'conteos_caligus'
+      const datosParaSupabase = registrosLocales.map(reg => ({
+        rut_muestreador: reg.rutMuestreador,
+        codigo_rna: reg.codigoRNA,
+        densidad_cultivo: reg.densidadCultivo != null ? Number(reg.densidadCultivo) : null,
+        tratamiento: reg.tratamiento,
+        conteo_total: (reg.juveniles || 0) + (reg.adultosMoviles || 0) + (reg.hembrasOvigeras || 0),
+        centro: reg.centro,
+        jaula: reg.jaula,
+        hembras_ovigeras: reg.hembrasOvigeras
+      }));
+
+      // Inserción masiva en Supabase
+      const { error } = await supabase.from('conteos_caligus').insert(datosParaSupabase);
+
+      if (error) throw error;
+
+      // Si todo sale bien, limpiamos la base local (esto vuelve el semáforo a verde)
+      await db.conteos.clear();
+      alert('¡Sincronización exitosa! Los datos se subieron a Supabase y tu semáforo pasó a verde.');
+
+    } catch (error) {
+      console.error('Error de sincronización:', error);
+      alert(`No se pudo sincronizar: ${error?.message ?? 'Revisa tu conexión en el pontón.'}`);
+    }
+  };
+
+  // El inicio de tu función siguiente...
   const handleEliminar = async (id) => {
     if (
       !window.confirm(
@@ -661,20 +699,30 @@ export default function RegistroConteos() {
 
       <section aria-labelledby="titulo-historial">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <h2
-            id="titulo-historial"
-            className="text-xl font-bold text-gray-900"
-          >
+          <h2 id="titulo-historial" className="text-xl font-bold text-gray-900">
             Historial de Registros Locales
           </h2>
-          <Button
-            variant="teal"
-            onClick={exportarToExcelSIFA}
-            disabled={exportando || historial === undefined}
-            className="h-12 px-4 text-sm font-bold whitespace-nowrap"
-          >
-            {exportando ? 'Generando…' : '📥 Exportar Planilla SIFA'}
-          </Button>
+          
+          {/* Contenedor que agrupa ambos botones ordenados en escritorio y móvil */}
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={sincronizarNube}
+              disabled={historial === undefined || registrosOrdenados.length === 0}
+              className="h-12 px-4 text-sm font-bold rounded-md bg-blue-600 border-2 border-blue-700 hover:bg-blue-500 text-white disabled:opacity-50 transition-colors flex items-center justify-center gap-2 touch-manipulation"
+            >
+              🔄 Sincronizar a la Nube
+            </button>
+
+            <Button
+              variant="teal"
+              onClick={exportarToExcelSIFA}
+              disabled={exportando || historial === undefined}
+              className="h-12 px-4 text-sm font-bold whitespace-nowrap w-full sm:w-auto"
+            >
+              {exportando ? 'Generando…' : '📥 Exportar Planilla SIFA'}
+            </Button>
+          </div>
         </div>
 
         {historial === undefined ? (
