@@ -3,7 +3,7 @@ import { supabase } from '../db/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 // Ajusta la ruta de importación de tu base de datos local según tu proyecto
-import { db } from '../db/kairosDb'; s
+import { db } from '../db/kairosDb';
 
 const Navbar = () => {
   const navigate = useNavigate();
