@@ -6,6 +6,7 @@ import { db } from './db/kairosDb'
 import { supabase } from './db/supabaseClient'
 import { useAuth } from './context/AuthContext';
 import Navbar from './componentes/navbar';
+import { useNavigate } from 'react-router-dom';
 
 // --- Constantes mock ---
 const CENTROS = ['Huelmo', 'Pargua', 'Quitralco']
@@ -225,8 +226,10 @@ function ContadorCategoria({
 // --- Vista principal ---
 
 export default function RegistroConteos() {
-  const { session } = useAuth(); // <--- Agrega esta línea
+  const { session, rol } = useAuth(); // <--- Extrae el 'rol' aquí
+  const navigate = useNavigate(); // <--- Ya lo tenías, asegúrate que esté instanciado
   
+  // ... resto de tus estados ...
   const [centro, setCentro] = useState('Huelmo')
   const [jaula, setJaula] = useState('101')
   const [rutMuestreador, setRutMuestreador] = useState('')
@@ -469,10 +472,22 @@ export default function RegistroConteos() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-8">
-        <Navbar /> {/* <-- Esta es la barra superior que nos permite viajar al Dashboard */}
+        <Navbar /> {/* <-- Esta es la barra superior base */}
         
+        {/* === NUEVO BOTÓN FLOTANTE DE RETORNO (Solo Gerencia/Veterinarios) === */}
+        {(rol === 'gerente_salud' || rol === 'veterinario') && (
+          <div className="max-w-lg mx-auto w-full px-4 mt-4">
+            <button 
+              onClick={() => navigate('/dashboard')}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 px-4 rounded-md text-sm font-bold shadow-md transition-all flex items-center justify-center gap-2 border-2 border-indigo-700 active:bg-indigo-700"
+            >
+              📊 Volver al Centro de Inteligencia (Dashboard)
+            </button>
+          </div>
+        )}
+  
         <div className="max-w-lg mx-auto w-full px-4 space-y-4 text-left text-gray-900 box-border mt-4">
-          {/* Toast temporal de éxito */}
+          {/* Toast temporal de éxito... */}
           {mensajeExito && (
             <div
               role="status"

@@ -174,19 +174,30 @@ const Dashboard = () => {
     if (!elemento) return;
 
     const noImprimir = document.querySelectorAll('.no-imprimir');
-    noImprimir.forEach(el => el.style.display = 'none');
+    
+    try {
+      // 1. Ocultamos los botones
+      noImprimir.forEach(el => el.style.display = 'none');
 
-    const canvas = await html2canvas(elemento, { scale: 2 });
-    const imgData = canvas.toDataURL('image/png');
+      // 2. Tomamos la captura (agregamos useCORS por si hay gráficos complejos)
+      const canvas = await html2canvas(elemento, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
 
-    noImprimir.forEach(el => el.style.display = '');
+      // 3. Armamos el PDF
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`KAIROS_Informe_${centroSeleccionado}_${new Date().toISOString().split('T')[0]}.pdf`);
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`KAIROS_Informe_${centroSeleccionado}_${new Date().toISOString().split('T')[0]}.pdf`);
+      
+    } catch (error) {
+      console.error('Error al generar el PDF:', error);
+      alert('Hubo un error al crear el documento. Revisa la consola.');
+    } finally {
+      // 4. ESTO ES LO VITAL: Siempre restauramos los botones al final, haya error o no.
+      noImprimir.forEach(el => el.style.display = '');
+    }
   };
 
   // Listas desplegables dinámicas
@@ -210,13 +221,21 @@ const Dashboard = () => {
           )}
         </div>
         <div className="flex gap-3 no-imprimir">
+          {/* NUEVO BOTÓN: Puente hacia el formulario de terreno */}
+          <button 
+            onClick={() => navigate('/terreno')} 
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 border border-slate-700"
+          >
+            📋 Ir a Terreno
+          </button>
+
           <button onClick={exportarExcelConsolidado} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20">
             📥 Descargar Excel SIFA
           </button>
           <button onClick={generarPDF} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20">
             📊 Exportar Informe PDF
           </button>
-          <button onClick={handleLogout} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-md text-sm font-medium transition-colors">
+          <button onClick={handleLogout} className="bg-slate-800 hover:bg-red-900 text-slate-300 hover:text-white px-4 py-2 rounded-md text-sm font-medium transition-colors border border-slate-800 hover:border-red-900">
             Salir
           </button>
         </div>
