@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../db/supabaseClient';
 import { useNavigate } from 'react-router-dom';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import { toPng } from 'html-to-image'; // <--- Nuestro nuevo motor fotográfico
 import * as XLSX from 'xlsx';
 import { 
   ComposedChart, // <--- Cambiamos LineChart por ComposedChart para soportar Área y Líneas simultáneas
@@ -179,14 +179,18 @@ const Dashboard = () => {
       // 1. Ocultamos los botones
       noImprimir.forEach(el => el.style.display = 'none');
 
-      // 2. Tomamos la captura (agregamos useCORS por si hay gráficos complejos)
-      const canvas = await html2canvas(elemento, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
+      // 2. Tomamos la captura con el motor moderno (soporta oklch)
+      const imgData = await toPng(elemento, { 
+        pixelRatio: 2,
+        backgroundColor: '#0f172a' // Forzamos el fondo bg-slate-900 por si acaso
+      });
 
-      // 3. Armamos el PDF
+      // 3. Armamos el PDF leyendo las proporciones de la nueva imagen
       const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`KAIROS_Informe_${centroSeleccionado}_${new Date().toISOString().split('T')[0]}.pdf`);
@@ -195,7 +199,7 @@ const Dashboard = () => {
       console.error('Error al generar el PDF:', error);
       alert('Hubo un error al crear el documento. Revisa la consola.');
     } finally {
-      // 4. ESTO ES LO VITAL: Siempre restauramos los botones al final, haya error o no.
+      // 4. Restauramos los botones
       noImprimir.forEach(el => el.style.display = '');
     }
   };
