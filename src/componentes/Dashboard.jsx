@@ -3,6 +3,7 @@ import { supabase } from '../db/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import * as XLSX from 'xlsx'; // <--- Importamos el motor de Excel institucional
 import { 
   LineChart, 
   Line, 
@@ -15,14 +16,13 @@ import {
   ReferenceLine
 } from 'recharts';
 
-// Datos de simulación para la demo si la base de datos está vacía
+// Datos de simulación automatizada para la vitrina comercial (si la nube está vacía)
 const DATOS_DEMO = [
-  { fecha: '25/05', HO_Real: 1.2, HO_Predicho: 1.4, riesgo: 'Bajo' },
-  { fecha: '28/05', HO_Real: 1.8, HO_Predicho: 1.9, riesgo: 'Medio' },
-  { fecha: '01/06', HO_Real: 2.4, HO_Predicho: 2.6, riesgo: 'Alto' },
-  { fecha: '04/06', HO_Real: 2.9, HO_Predicho: 3.2, riesgo: 'Crítico' },
-  { fecha: '08/06', HO_Real: null, HO_Predicho: 3.5, riesgo: 'Crítico' },
-  { fecha: '11/06', HO_Real: null, HO_Predicho: 2.1, riesgo: 'Mitigado' }, // Proyección post-baño
+  { fecha: '25/05', HO_Real: 1.2, HO_Predicho: 1.4, centro: 'Huelmo', jaula: '101', rut_muestreador: '15344211-K', codigo_rna: '12010001', densidad_cultivo: 14.2, tratamiento: 'TN' },
+  { fecha: '28/05', HO_Real: 1.8, HO_Predicho: 1.9, centro: 'Huelmo', jaula: '102', rut_muestreador: '15344211-K', codigo_rna: '12010001', densidad_cultivo: 14.2, tratamiento: 'TN' },
+  { fecha: '01/06', HO_Real: 2.4, HO_Predicho: 2.6, centro: 'Pargua', jaula: '101', rut_muestreador: '17223901-2', codigo_rna: '12010055', densidad_cultivo: 15.1, tratamiento: 'T2' },
+  { fecha: '04/06', HO_Real: 2.9, HO_Predicho: 3.2, centro: 'Pargua', jaula: '103', rut_muestreador: '17223901-2', codigo_rna: '12010055', densidad_cultivo: 15.1, tratamiento: 'T2' },
+  { fecha: '08/06', HO_Real: null, HO_Predicho: 3.5, centro: 'Huelmo', jaula: '101', rut_muestreador: '15344211-K', codigo_rna: '12010001', densidad_cultivo: 14.2, tratamiento: 'TN' },
 ];
 
 const Dashboard = () => {
@@ -34,9 +34,9 @@ const Dashboard = () => {
   const [promedioHO, setPromedioHO] = useState(0);
   const [isDemoData, setIsDemoData] = useState(false);
 
-  // Variables del Algoritmo Epidemiológico Avanzado (Mocks Estructurales para la Demo)
-  const [factorFH, setFactorFH] = useState(0.4); // 0.4 significa 60% de mitigación por baño reciente
-  const [factorFV, setFactorFV] = useState(1.3); // 1.3 significa +30% de presión por centros vecinos
+  // Variables del Algoritmo Epidemiológico Avanzado (Roadmap Post-Lanzamiento)
+  const [factorFH] = useState(0.4); 
+  const [factorFV] = useState(1.3); 
   const [irkAcumulado, setIrkAcumulado] = useState(0);
 
   useEffect(() => {
@@ -46,7 +46,6 @@ const Dashboard = () => {
   const fetchDatosSanitarios = async () => {
     try {
       setLoading(true);
-      // Consumimos la tabla exacta que alimentamos desde el terreno
       const { data, error } = await supabase
         .from('conteos_caligus')
         .select('*')
@@ -55,42 +54,73 @@ const Dashboard = () => {
       if (error) throw error;
 
       if (data && data.length > 0) {
-        // Transformamos los datos para Recharts
         const datosMapeados = data.map(item => {
           const fechaObj = item.created_at ? new Date(item.created_at) : new Date();
           return {
             fecha: `${fechaObj.getDate()}/${fechaObj.getMonth() + 1}`,
             HO_Real: item.hembras_ovigeras != null ? Number(item.hembras_ovigeras) : 0,
-            HO_Predicho: Number(item.hembras_ovigeras || 0) * 1.1, // Placeholder predictivo base
-            centro: item.centro || 'Huelmo'
+            HO_Predicho: Number(item.hembras_ovigeras || 0) * 1.1,
+            
+            // Retenemos el contexto operativo para la exportación consolidada SIFA
+            centro: item.centro || 'N/A',
+            jaula: item.jaula || 'N/A',
+            rut_muestreador: item.rut_muestreador || 'N/A',
+            codigo_rna: item.codigo_rna || 'N/A',
+            densidad_cultivo: item.densidad_cultivo || 0,
+            tratamiento: item.tratamiento || 'TN',
+            conteo_total: item.conteo_total || 0
           };
         });
         
         setDatos(datosMapeados);
         
-        // Calculamos el promedio de HO actual
         const suma = data.reduce((acc, curr) => acc + (curr.hembras_ovigeras || 0), 0);
         const promedio = Number((suma / data.length).toFixed(2));
         setPromedioHO(promedio);
-        
-        // Cálculo base del IRK dinámico en base a tus variables epidemiológicas
         setIrkAcumulado(Number((promedio * factorFV * factorFH).toFixed(2)));
         setIsDemoData(false);
       } else {
-        // Si no hay datos en la nube, activamos la vitrina predictiva automatizada
         setDatos(DATOS_DEMO);
-        setPromedioHO(2.9);
-        setIrkAcumulado(1.5);
+        setPromedioHO(2.3);
+        setIrkAcumulado(1.2);
         setIsDemoData(true);
       }
     } catch (error) {
       console.error('Error cargando Dashboard:', error);
-      // Fallback seguro ante fallas de red corporativas
       setDatos(DATOS_DEMO);
       setIsDemoData(true);
     } finally {
       setLoading(false);
     }
+  };
+
+  // FUNCIÓN MAESTRA: Exportación Consolidada SIFA desde la Nube
+  const exportarExcelConsolidado = () => {
+    if (!datos || datos.length === 0) {
+      alert("No existen datos analíticos para compilar el reporte.");
+      return;
+    }
+
+    // Mapeamos los datos al estándar regulatorio exacto de Sernapesca
+    const filasSifa = datos.map(reg => ({
+      "Fecha Muestreo": reg.fecha,
+      "Centro de Cultivo": reg.centro,
+      "Código RNA": reg.codigo_rna,
+      "Número Jaula": reg.jaula,
+      "RUT Muestreador Calificado": reg.rut_muestreador,
+      "Densidad Biomasa (kg/m³)": Number(reg.densidad_cultivo),
+      "Esquema Fármaco": reg.tratamiento,
+      "Conteo Total Parásitos": Number(reg.conteo_total),
+      "Hembras Ovígeras (HO)": Number(reg.HO_Real || 0)
+    }));
+
+    const hoja = XLSX.utils.json_to_sheet(filasSifa);
+    const libro = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(libro, hoja, "Consolidado SIFA");
+
+    const hoy = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(libro, `KAIROS_SIFA_CONSOLIDADO_${hoy}.xlsx`);
+    console.log("📥 Planilla consolidada generada desde el repositorio central.");
   };
 
   const handleLogout = async () => {
@@ -102,14 +132,16 @@ const Dashboard = () => {
     const elemento = reporteRef.current;
     if (!elemento) return;
 
-    // Ocultamos temporalmente elementos de navegación de la foto corporativa
     const botonPDF = document.getElementById('btn-export-pdf');
+    const botonExcel = document.getElementById('btn-export-excel');
     if (botonPDF) botonPDF.style.display = 'none';
+    if (botonExcel) botonExcel.style.display = 'none';
 
     const canvas = await html2canvas(elemento, { scale: 2 });
     const imgData = canvas.toDataURL('image/png');
 
     if (botonPDF) botonPDF.style.display = 'flex';
+    if (botonExcel) botonExcel.style.display = 'flex';
 
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -119,18 +151,6 @@ const Dashboard = () => {
     pdf.save(`KAIROS_Informe_Predictivo_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-bold">
-        <div className="text-center space-y-2">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="text-slate-400 text-sm">Compilando Inteligencia Oceanográfica...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Alerta crítica si superamos el umbral normativo biológico
   const limiteSuperado = promedioHO >= 3.0;
 
   return (
@@ -141,21 +161,30 @@ const Dashboard = () => {
         <div className="flex items-center gap-3">
           <div className="h-3 w-3 bg-blue-500 rounded-full animate-pulse"></div>
           <h1 className="text-xl font-black tracking-wider text-white">
-            KAIROS <span className="text-blue-500 font-medium text-sm tracking-normal">Anticaligus Predictive Engine</span>
+            KAIROS <span className="text-blue-500 font-medium text-sm tracking-normal">Predictive Engine</span>
           </h1>
           {isDemoData && (
             <span className="bg-amber-500/10 text-amber-400 text-xs px-2 py-0.5 rounded border border-amber-500/20 font-mono">
-              ENTORNO SIMULACIÓN (DEMO VIRTUAL)
+              MODO SIMULACIÓN ACTIVADO
             </span>
           )}
         </div>
         <div className="flex gap-3">
+          {/* Botón de Excel Consolidado */}
+          <button 
+            id="btn-export-excel"
+            onClick={exportarExcelConsolidado}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20"
+          >
+            📥 Descargar Excel SIFA Consolidado
+          </button>
+          
           <button 
             id="btn-export-pdf"
             onClick={generarPDF}
             className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20"
           >
-            📊 Exportar Informe Ejecutivo PDF
+            📊 Exportar Informe PDF
           </button>
           <button 
             onClick={handleLogout} 
@@ -184,7 +213,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* INDICADORES DEL MODELO EPIDEMIOLÓGICO DE CLASE MUNDIAL */}
+        {/* INDICADORES DEL MODELO EPIDEMIOLÓGICO */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           
           <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
@@ -204,7 +233,7 @@ const Dashboard = () => {
               <span className="text-4xl font-black text-teal-400">{factorFH}</span>
               <span className="text-xs text-teal-500 font-bold">-60% Riesgo</span>
             </div>
-            <div className="mt-2 text-xs text-slate-500">Ventana activa: <span className="font-bold">&lt; 21 días post-baño (T2)</span></div>
+            <div className="mt-2 text-xs text-slate-500">Ventana activa: <span className="font-bold">&lt; 21 días post-baño</span></div>
           </div>
 
           <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
@@ -213,7 +242,7 @@ const Dashboard = () => {
               <span className="text-4xl font-black text-amber-500">+{factorFV}</span>
               <span className="text-xs text-amber-500 font-bold">+30% Presión</span>
             </div>
-            <div className="mt-2 text-xs text-slate-500">Origen: <span className="font-bold">Saturación en centros adyacentes</span></div>
+            <div className="mt-2 text-xs text-slate-500">Estatus: <span className="font-bold">Presión activa por cercanía espacial</span></div>
           </div>
 
           <div className="bg-slate-950 p-5 rounded-xl border-2 border-blue-600 bg-gradient-to-br from-slate-950 to-blue-950/20 shadow-lg shadow-blue-500/5">
@@ -224,7 +253,7 @@ const Dashboard = () => {
                 {irkAcumulado > 2.0 ? 'Riesgo Alto' : 'Moderado'}
               </span>
             </div>
-            <div className="mt-2 text-xs text-blue-400/70 font-mono">Simulación Matemática Avanzada</div>
+            <div className="mt-2 text-xs text-blue-400/70 font-mono">Simulación Matemática Estructurada</div>
           </div>
 
         </div>
@@ -260,10 +289,8 @@ const Dashboard = () => {
                 />
                 <Legend verticalAlign="hidden" />
                 
-                {/* Línea de corte normativo institucional */}
                 <ReferenceLine y={3.0} stroke="#b91c1c" strokeDasharray="4 4" label={{ value: 'Umbral Sernapesca (3.0 HO)', fill: '#ef4444', position: 'top', fontSize: 11, fontWeight: 'bold' }} />
                 
-                {/* Línea Sólida: Lo capturado en las balsas */}
                 <Line 
                   name="HO Real"
                   type="monotone" 
@@ -274,7 +301,6 @@ const Dashboard = () => {
                   activeDot={{ r: 7 }}
                 />
                 
-                {/* Línea Punteada: La proyección matemática del modelo predictivo */}
                 <Line 
                   name="Proyección Modelada"
                   type="monotone" 
