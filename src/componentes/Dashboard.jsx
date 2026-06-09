@@ -3,9 +3,10 @@ import { supabase } from '../db/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import * as XLSX from 'xlsx'; // <--- Importamos el motor de Excel institucional
+import * as XLSX from 'xlsx';
 import { 
-  LineChart, 
+  ComposedChart, // <--- Cambiamos LineChart por ComposedChart para soportar Área y Líneas simultáneas
+  Area,          // <--- Importamos Area para la banda de confianza
   Line, 
   XAxis, 
   YAxis, 
@@ -16,7 +17,7 @@ import {
   ReferenceLine
 } from 'recharts';
 
-// Datos de simulación automatizada para la vitrina comercial (si la nube está vacía)
+// Datos de simulación automatizada (vitrina comercial)
 const DATOS_DEMO = [
   { fecha: '25/05', HO_Real: 1.2, HO_Predicho: 1.4, centro: 'Huelmo', jaula: '101', rut_muestreador: '15344211-K', codigo_rna: '12010001', densidad_cultivo: 14.2, tratamiento: 'TN' },
   { fecha: '28/05', HO_Real: 1.8, HO_Predicho: 1.9, centro: 'Huelmo', jaula: '102', rut_muestreador: '15344211-K', codigo_rna: '12010001', densidad_cultivo: 14.2, tratamiento: 'TN' },
@@ -29,12 +30,19 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const reporteRef = useRef(null);
   
-  const [datos, setDatos] = useState([]);
+  // Estados originales
+  const [datosCrudos, setDatosCrudos] = useState([]); // Base de datos intocable para filtros
+  const [datosVisibles, setDatosVisibles] = useState([]); // Datos que se muestran según el filtro
   const [loading, setLoading] = useState(true);
   const [promedioHO, setPromedioHO] = useState(0);
   const [isDemoData, setIsDemoData] = useState(false);
 
-  // Variables del Algoritmo Epidemiológico Avanzado (Roadmap Post-Lanzamiento)
+  // Estados de las Nuevas Mejoras
+  const [ultimaActualizacion, setUltimaActualizacion] = useState('');
+  const [centroSeleccionado, setCentroSeleccionado] = useState('Todos');
+  const [jaulaSeleccionada, setJaulaSeleccionada] = useState('Todas');
+
+  // Variables del Algoritmo Epidemiológico Avanzado
   const [factorFH] = useState(0.4); 
   const [factorFV] = useState(1.3); 
   const [irkAcumulado, setIrkAcumulado] = useState(0);
@@ -43,25 +51,59 @@ const Dashboard = () => {
     fetchDatosSanitarios();
   }, []);
 
+  // Lógica de filtrado dinámico cuando cambian los selectores
+  useEffect(() => {
+    if (datosCrudos.length === 0) return;
+
+    let filtrados = datosCrudos;
+    if (centroSeleccionado !== 'Todos') {
+      filtrados = filtrados.filter(d => d.centro === centroSeleccionado);
+    }
+    if (jaulaSeleccionada !== 'Todas') {
+      filtrados = filtrados.filter(d => d.jaula === jaulaSeleccionada);
+    }
+
+    setDatosVisibles(filtrados);
+
+    // Recálculo automático de KPIs en base a lo filtrado
+    if (filtrados.length > 0) {
+      const validos = filtrados.filter(d => d.HO_Real != null);
+      const suma = validos.reduce((acc, curr) => acc + curr.HO_Real, 0);
+      const promedio = validos.length > 0 ? Number((suma / validos.length).toFixed(2)) : 0;
+      setPromedioHO(promedio);
+      setIrkAcumulado(Number((promedio * factorFV * factorFH).toFixed(2)));
+    } else {
+      setPromedioHO(0);
+      setIrkAcumulado(0);
+    }
+  }, [datosCrudos, centroSeleccionado, jaulaSeleccionada, factorFH, factorFV]);
+
   const fetchDatosSanitarios = async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('conteos_caligus')
         .select('*')
-        .order('id', { ascending: true });
+        .order('created_at', { ascending: true });
 
       if (error) throw error;
 
       if (data && data.length > 0) {
+        // 1. Extraer timestamp más reciente
+        const timestampMax = new Date(Math.max(...data.map(e => new Date(e.created_at).getTime())));
+        setUltimaActualizacion(`${timestampMax.toLocaleDateString()} a las ${timestampMax.getHours().toString().padStart(2, '0')}:${timestampMax.getMinutes().toString().padStart(2, '0')}h`);
+
         const datosMapeados = data.map(item => {
-          const fechaObj = item.created_at ? new Date(item.created_at) : new Date();
+          const fechaObj = new Date(item.created_at);
+          const hoReal = item.hembras_ovigeras != null ? Number(item.hembras_ovigeras) : null;
+          const predBase = hoReal !== null ? hoReal * 1.1 : Number(item.densidad_cultivo || 10) * 0.2; // Predicción base
+
           return {
             fecha: `${fechaObj.getDate()}/${fechaObj.getMonth() + 1}`,
-            HO_Real: item.hembras_ovigeras != null ? Number(item.hembras_ovigeras) : 0,
-            HO_Predicho: Number(item.hembras_ovigeras || 0) * 1.1,
-            
-            // Retenemos el contexto operativo para la exportación consolidada SIFA
+            HO_Real: hoReal,
+            HO_Predicho: predBase,
+            Rango_Min: predBase * 0.85, // Banda baja (-15%)
+            Rango_Max: predBase * 1.15, // Banda alta (+15%)
             centro: item.centro || 'N/A',
             jaula: item.jaula || 'N/A',
             rut_muestreador: item.rut_muestreador || 'N/A',
@@ -72,37 +114,37 @@ const Dashboard = () => {
           };
         });
         
-        setDatos(datosMapeados);
-        
-        const suma = data.reduce((acc, curr) => acc + (curr.hembras_ovigeras || 0), 0);
-        const promedio = Number((suma / data.length).toFixed(2));
-        setPromedioHO(promedio);
-        setIrkAcumulado(Number((promedio * factorFV * factorFH).toFixed(2)));
+        setDatosCrudos(datosMapeados);
         setIsDemoData(false);
       } else {
-        setDatos(DATOS_DEMO);
-        setPromedioHO(2.3);
-        setIrkAcumulado(1.2);
-        setIsDemoData(true);
+        generarDatosSimulacion();
       }
     } catch (error) {
       console.error('Error cargando Dashboard:', error);
-      setDatos(DATOS_DEMO);
-      setIsDemoData(true);
+      generarDatosSimulacion();
     } finally {
       setLoading(false);
     }
   };
 
-  // FUNCIÓN MAESTRA: Exportación Consolidada SIFA desde la Nube
+  const generarDatosSimulacion = () => {
+    const demoConRangos = DATOS_DEMO.map(d => ({
+      ...d,
+      Rango_Min: d.HO_Predicho * 0.85,
+      Rango_Max: d.HO_Predicho * 1.15
+    }));
+    setDatosCrudos(demoConRangos);
+    setUltimaActualizacion('Simulación (Hoy, 08:00h)');
+    setIsDemoData(true);
+  };
+
   const exportarExcelConsolidado = () => {
-    if (!datos || datos.length === 0) {
+    if (!datosVisibles || datosVisibles.length === 0) {
       alert("No existen datos analíticos para compilar el reporte.");
       return;
     }
 
-    // Mapeamos los datos al estándar regulatorio exacto de Sernapesca
-    const filasSifa = datos.map(reg => ({
+    const filasSifa = datosVisibles.map(reg => ({
       "Fecha Muestreo": reg.fecha,
       "Centro de Cultivo": reg.centro,
       "Código RNA": reg.codigo_rna,
@@ -119,8 +161,7 @@ const Dashboard = () => {
     XLSX.utils.book_append_sheet(libro, hoja, "Consolidado SIFA");
 
     const hoy = new Date().toISOString().split('T')[0];
-    XLSX.writeFile(libro, `KAIROS_SIFA_CONSOLIDADO_${hoy}.xlsx`);
-    console.log("📥 Planilla consolidada generada desde el repositorio central.");
+    XLSX.writeFile(libro, `KAIROS_SIFA_${centroSeleccionado.toUpperCase()}_${hoy}.xlsx`);
   };
 
   const handleLogout = async () => {
@@ -132,26 +173,25 @@ const Dashboard = () => {
     const elemento = reporteRef.current;
     if (!elemento) return;
 
-    const botonPDF = document.getElementById('btn-export-pdf');
-    const botonExcel = document.getElementById('btn-export-excel');
-    if (botonPDF) botonPDF.style.display = 'none';
-    if (botonExcel) botonExcel.style.display = 'none';
+    const noImprimir = document.querySelectorAll('.no-imprimir');
+    noImprimir.forEach(el => el.style.display = 'none');
 
     const canvas = await html2canvas(elemento, { scale: 2 });
     const imgData = canvas.toDataURL('image/png');
 
-    if (botonPDF) botonPDF.style.display = 'flex';
-    if (botonExcel) botonExcel.style.display = 'flex';
+    noImprimir.forEach(el => el.style.display = '');
 
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
     pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`KAIROS_Informe_Predictivo_${new Date().toISOString().split('T')[0]}.pdf`);
+    pdf.save(`KAIROS_Informe_${centroSeleccionado}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  const limiteSuperado = promedioHO >= 3.0;
+  // Listas desplegables dinámicas
+  const centrosUnicos = ['Todos', ...new Set(datosCrudos.map(d => d.centro))];
+  const jaulasUnicas = ['Todas', ...new Set(datosCrudos.filter(d => centroSeleccionado === 'Todos' || d.centro === centroSeleccionado).map(d => d.jaula))];
 
   return (
     <div ref={reporteRef} className="min-h-screen bg-slate-900 text-slate-100 pb-12 font-sans">
@@ -164,32 +204,19 @@ const Dashboard = () => {
             KAIROS <span className="text-blue-500 font-medium text-sm tracking-normal">Predictive Engine</span>
           </h1>
           {isDemoData && (
-            <span className="bg-amber-500/10 text-amber-400 text-xs px-2 py-0.5 rounded border border-amber-500/20 font-mono">
+            <span className="bg-amber-500/10 text-amber-400 text-xs px-2 py-0.5 rounded border border-amber-500/20 font-mono no-imprimir">
               MODO SIMULACIÓN ACTIVADO
             </span>
           )}
         </div>
-        <div className="flex gap-3">
-          {/* Botón de Excel Consolidado */}
-          <button 
-            id="btn-export-excel"
-            onClick={exportarExcelConsolidado}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20"
-          >
-            📥 Descargar Excel SIFA Consolidado
+        <div className="flex gap-3 no-imprimir">
+          <button onClick={exportarExcelConsolidado} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20">
+            📥 Descargar Excel SIFA
           </button>
-          
-          <button 
-            id="btn-export-pdf"
-            onClick={generarPDF}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20"
-          >
+          <button onClick={generarPDF} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20">
             📊 Exportar Informe PDF
           </button>
-          <button 
-            onClick={handleLogout} 
-            className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-md text-sm font-medium transition-colors"
-          >
+          <button onClick={handleLogout} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-md text-sm font-medium transition-colors">
             Salir
           </button>
         </div>
@@ -198,14 +225,56 @@ const Dashboard = () => {
       {/* CONTENEDOR ANALÍTICO PRINCIPAL */}
       <main className="max-w-7xl mx-auto px-8 mt-8 space-y-6">
         
-        {/* PANEL DE ALERTAS PREVENTIVAS */}
-        {limiteSuperado ? (
+        {/* BARRA DE FILTROS Y TIMESTAMP (Mejora 1 y 2) */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 bg-slate-950/50 p-4 rounded-xl border border-slate-800">
+          <div className="flex gap-4">
+            <div>
+              <label className="text-xs text-slate-400 font-bold uppercase tracking-wider block mb-1">Filtro de Centro</label>
+              <select 
+                value={centroSeleccionado} 
+                onChange={(e) => { setCentroSeleccionado(e.target.value); setJaulaSeleccionada('Todas'); }}
+                className="bg-slate-900 border border-slate-700 text-sm rounded-md px-4 py-2 text-white outline-none focus:border-blue-500 transition-colors"
+              >
+                {centrosUnicos.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 font-bold uppercase tracking-wider block mb-1">Filtro de Jaula</label>
+              <select 
+                value={jaulaSeleccionada} 
+                onChange={(e) => setJaulaSeleccionada(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-sm rounded-md px-4 py-2 text-white outline-none focus:border-blue-500 transition-colors"
+              >
+                {jaulasUnicas.map(j => <option key={j} value={j}>{j}</option>)}
+              </select>
+            </div>
+          </div>
+          
+          <div className="text-right">
+            <div className="text-xs text-slate-500 flex items-center justify-end gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Último dato procesado:
+            </div>
+            <div className="font-mono text-sm font-bold text-slate-300 mt-0.5">{ultimaActualizacion}</div>
+          </div>
+        </div>
+
+        {/* SEMÁFORO ESCALONADO (Mejora 3) */}
+        {irkAcumulado >= 2.0 || promedioHO >= 3.0 ? (
           <div className="bg-red-950/40 border-2 border-red-700/60 rounded-xl p-4 flex items-center justify-between animate-pulse">
             <div>
               <h3 className="text-red-400 font-black text-lg">ALERTA CRÍTICA: RIESGO DE NOTIFICACIÓN SANITARIA</h3>
-              <p className="text-red-300/80 text-sm mt-0.5">El promedio acumulado supera las 3.0 HO. Sernapesca exige activación inmediata de planes de contingencia.</p>
+              <p className="text-red-300/80 text-sm mt-0.5">Límites normativos o algoritmos predictivos superados. Activar planes de contingencia inmediatamente.</p>
             </div>
             <span className="bg-red-600 text-white px-3 py-1 rounded text-xs font-black">ACCIÓN URGENTE</span>
+          </div>
+        ) : irkAcumulado > 0.8 ? (
+          <div className="bg-amber-950/40 border border-amber-700/60 rounded-xl p-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-amber-400 font-black text-lg">ATENCIÓN: TENDENCIA PREVENTIVA AL ALZA</h3>
+              <p className="text-amber-300/80 text-sm mt-0.5">El Índice de Riesgo indica presión vecinal o pérdida de inercia farmacológica. Evaluar mitigación en 72h.</p>
+            </div>
+            <span className="bg-amber-600 text-white px-3 py-1 rounded text-xs font-black">MONITOREO ESTRICTO</span>
           </div>
         ) : (
           <div className="bg-emerald-950/30 border border-emerald-800/40 rounded-xl p-4">
@@ -215,20 +284,17 @@ const Dashboard = () => {
 
         {/* INDICADORES DEL MODELO EPIDEMIOLÓGICO */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          
           <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-1">Carga Biológica Actual</span>
             <div className="flex items-baseline gap-2">
-              <span className={`text-4xl font-black ${limiteSuperado ? 'text-red-500' : 'text-white'}`}>
-                {promedioHO}
-              </span>
-              <span className="text-xs text-slate-400 font-medium">HO Promedio</span>
+              <span className={`text-4xl font-black ${promedioHO >= 3.0 ? 'text-red-500' : 'text-white'}`}>{promedioHO}</span>
+              <span className="text-xs text-slate-400 font-medium">HO Prom.</span>
             </div>
             <div className="mt-2 text-xs text-slate-500">Límite Normativo SIFA: <span className="font-bold">3.0 HO</span></div>
           </div>
 
           <div className="bg-slate-950 p-5 rounded-xl border border-slate-800">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-1">Factor Inercia Farmacológica ($F_H$)</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-1">Inercia Farmacológica ($F_H$)</span>
             <div className="flex items-baseline gap-2">
               <span className="text-4xl font-black text-teal-400">{factorFH}</span>
               <span className="text-xs text-teal-500 font-bold">-60% Riesgo</span>
@@ -242,44 +308,44 @@ const Dashboard = () => {
               <span className="text-4xl font-black text-amber-500">+{factorFV}</span>
               <span className="text-xs text-amber-500 font-bold">+30% Presión</span>
             </div>
-            <div className="mt-2 text-xs text-slate-500">Estatus: <span className="font-bold">Presión activa por cercanía espacial</span></div>
+            <div className="mt-2 text-xs text-slate-500">Estatus: <span className="font-bold">Presión por cercanía</span></div>
           </div>
 
-          <div className="bg-slate-950 p-5 rounded-xl border-2 border-blue-600 bg-gradient-to-br from-slate-950 to-blue-950/20 shadow-lg shadow-blue-500/5">
-            <span className="text-xs font-bold text-blue-400 uppercase tracking-widest block mb-1">Índice de Riesgo Kairos ($IRK$)</span>
+          <div className={`p-5 rounded-xl border-2 shadow-lg ${irkAcumulado > 0.8 ? 'bg-amber-950/20 border-amber-600 shadow-amber-500/5' : 'bg-gradient-to-br from-slate-950 to-blue-950/20 border-blue-600 shadow-blue-500/5'}`}>
+            <span className={`text-xs font-bold uppercase tracking-widest block mb-1 ${irkAcumulado > 0.8 ? 'text-amber-400' : 'text-blue-400'}`}>Índice de Riesgo ($IRK$)</span>
             <div className="flex items-baseline gap-2">
               <span className="text-4xl font-black text-white">{irkAcumulado}</span>
-              <span className={`text-xs px-2 py-0.5 rounded font-black ${irkAcumulado > 2.0 ? 'bg-red-500 text-white' : 'bg-blue-500/20 text-blue-400'}`}>
-                {irkAcumulado > 2.0 ? 'Riesgo Alto' : 'Moderado'}
+              <span className={`text-xs px-2 py-0.5 rounded font-black ${irkAcumulado >= 2.0 ? 'bg-red-500 text-white' : irkAcumulado > 0.8 ? 'bg-amber-500 text-amber-950' : 'bg-blue-500/20 text-blue-400'}`}>
+                {irkAcumulado >= 2.0 ? 'Alto' : irkAcumulado > 0.8 ? 'Medio' : 'Moderado'}
               </span>
             </div>
-            <div className="mt-2 text-xs text-blue-400/70 font-mono">Simulación Matemática Estructurada</div>
+            <div className={`mt-2 text-xs font-mono ${irkAcumulado > 0.8 ? 'text-amber-400/70' : 'text-blue-400/70'}`}>Simulación Estructurada</div>
           </div>
-
         </div>
 
-        {/* ÁREA DE GRÁFICA PREDICTIVA INTERACTIVA */}
+        {/* ÁREA DE GRÁFICA PREDICTIVA CON BANDA DE CONFIANZA (Mejora 4) */}
         <div className="bg-slate-950 p-6 rounded-xl border border-slate-800">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h2 className="text-lg font-black text-white">Curva de Tendencia y Mitigación Preventiva</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Modelamiento probabilístico cruzando Temperatura, Salinidad y Factores Biológicos ($F_H \cdot F_V$)</p>
+              <h2 className="text-lg font-black text-white">Curva de Tendencia y Banda de Mitigación (±15%)</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Intervalo de confianza probabilístico basado en variables oceanográficas e históricas.</p>
             </div>
             <div className="flex gap-4 text-xs">
               <div className="flex items-center gap-2">
                 <div className="h-3 w-3 bg-blue-500 rounded-full"></div>
-                <span className="text-slate-300">Conteo Real (Terreno)</span>
+                <span className="text-slate-300">Conteo Real</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="h-0.5 w-4 border-t-2 border-dashed border-amber-500"></div>
-                <span className="text-slate-300">Proyección Algorítmica</span>
+                <div className="h-3 w-3 bg-amber-500/30 border border-amber-500 border-dashed rounded-full"></div>
+                <span className="text-slate-300">Margen Probabilístico</span>
               </div>
             </div>
           </div>
 
           <div className="h-96 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={datos} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              {/* ComposedChart permite combinar Area (bandas) y Line (curvas) */}
+              <ComposedChart data={datosVisibles} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis dataKey="fecha" stroke="#64748b" fontSize={12} tickLine={false} />
                 <YAxis stroke="#64748b" fontSize={12} tickLine={false} domain={[0, 5]} />
@@ -288,29 +354,19 @@ const Dashboard = () => {
                   labelStyle={{ color: '#94a3b8', fontWeight: 'bold' }}
                 />
                 <Legend verticalAlign="hidden" />
-                
                 <ReferenceLine y={3.0} stroke="#b91c1c" strokeDasharray="4 4" label={{ value: 'Umbral Sernapesca (3.0 HO)', fill: '#ef4444', position: 'top', fontSize: 11, fontWeight: 'bold' }} />
                 
-                <Line 
-                  name="HO Real"
-                  type="monotone" 
-                  dataKey="HO_Real" 
-                  stroke="#3b82f6" 
-                  strokeWidth={3} 
-                  dot={{ r: 4, fill: '#3b82f6' }}
-                  activeDot={{ r: 7 }}
-                />
+                {/* 1. La Banda de Confianza Sombreada */}
+                <Area type="monotone" dataKey="Rango_Max" stroke="none" fill="#f59e0b" fillOpacity={0.15} />
+                {/* 2. El "recorte" de la parte inferior para que flote la banda. Usamos el mismo color de fondo del chart (#020617) */}
+                <Area type="monotone" dataKey="Rango_Min" stroke="none" fill="#020617" fillOpacity={1} />
                 
-                <Line 
-                  name="Proyección Modelada"
-                  type="monotone" 
-                  dataKey="HO_Predicho" 
-                  stroke="#f59e0b" 
-                  strokeWidth={2} 
-                  strokeDasharray="5 5"
-                  dot={{ r: 3, fill: '#f59e0b' }}
-                />
-              </LineChart>
+                {/* 3. Línea sólida de terreno */}
+                <Line name="HO Real" type="monotone" dataKey="HO_Real" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6' }} activeDot={{ r: 7 }} />
+                
+                {/* 4. Línea punteada de predicción media */}
+                <Line name="Proyección Modelada" type="monotone" dataKey="HO_Predicho" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: '#f59e0b' }} />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </div>
