@@ -14,13 +14,35 @@ const Login = () => {
     setLoading(true);
     setMensaje({ tipo: '', texto: '' });
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    // 1. Validamos credenciales
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
-      setMensaje({ tipo: 'error', texto: error.message });
+    if (authError) {
+      setMensaje({ tipo: 'error', texto: authError.message });
       setLoading(false);
-    } else {
+      return;
+    }
+
+    // 2. Si la contraseña es correcta, buscamos su rol inmediatamente
+    const { data: perfilData, error: perfilError } = await supabase
+      .from('perfiles')
+      .select('rol')
+      .eq('id', authData.user.id)
+      .single();
+
+    if (perfilError) {
+      console.error("Error al leer el perfil de seguridad:", perfilError);
+      // Fallback seguro en caso de error de conexión leve
       navigate('/terreno');
+    } else {
+      // 3. Enrutamiento Inteligente basado en el rol extraído
+      const rolDelUsuario = perfilData.rol;
+      
+      if (rolDelUsuario === 'gerente_salud' || rolDelUsuario === 'veterinario') {
+        navigate('/dashboard'); // Directo al Centro de Inteligencia
+      } else {
+        navigate('/terreno'); // Directo al formulario offline
+      }
     }
   };
 
@@ -66,7 +88,7 @@ const Login = () => {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded hover:bg-teal-500 active:bg-teal-700 disabled:opacity-50"
+              className="w-full bg-teal-600 text-white font-bold py-3 px-4 rounded hover:bg-teal-500 active:bg-teal-700 disabled:opacity-50 transition-colors"
             >
               {loading ? 'Procesando...' : 'Iniciar Sesión'}
             </button>

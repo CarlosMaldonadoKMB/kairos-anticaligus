@@ -2,31 +2,27 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export const ProtectedRoute = ({ children, rolesPermitidos }) => {
-  const { session, rol, loading } = useAuth();
+  // Cambiamos 'session' por 'user' para coincidir con tu nuevo AuthContext
+  const { user, rol } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-        <p className="text-xl">Verificando credenciales...</p>
-      </div>
-    );
+  // (Ya no necesitamos el bloque 'if (loading)' aquí, porque el nuevo AuthContext 
+  // no renderiza las rutas hasta que termina de cargar. ¡Código más limpio!)
+
+  // 1. Si no hay sesión activa, patada al login
+  if (!user) {
+    return <Navigate to="/" replace />; // Ojo: pon "/login" si tu ruta inicial se llama así
   }
 
-  // Si no hay sesión, patada al login
-  if (!session) {
-    return <Navigate to="/login" replace />;
-  }
-
-  // Si tiene sesión pero su rol no está permitido en esta vista
+  // 2. Si tiene sesión pero su rol no está permitido en esta vista
   if (rolesPermitidos && !rolesPermitidos.includes(rol)) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-4 text-center">
-        <h2 className="text-2xl font-bold text-red-500 mb-2">Acceso Denegado</h2>
-        <p>Tu nivel de usuario ({rol}) no tiene permisos para ver esta pantalla.</p>
-      </div>
-    );
+    // Enrutamiento inteligente (Mejor UX que la pantalla estática de error)
+    if (rol === 'Muestreador') {
+      return <Navigate to="/registro" replace />;
+    } else {
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
-  // Si pasa todo, le mostramos el componente
+  // 3. Si pasa todo, le mostramos el componente
   return children;
 };
