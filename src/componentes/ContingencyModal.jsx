@@ -39,7 +39,7 @@ export const ContingencyModal = ({ isOpen, onClose, centro }) => {
           <h3 className="text-lg font-semibold text-white">Acciones Inmediatas Sugeridas:</h3>
           <ol className="list-inside list-decimal space-y-3 text-slate-300">
             <li><strong className="text-white">Aislar unidad de cultivo:</strong> Suspender movimiento de redes en jaulas afectadas.</li>
-            <li><strong className="text-white">Notificación Interna:</strong> Enviar reporte automático a Gerencia de Salud y Centro Veterinario.</li>
+            <li><strong className="text-white">Alerta a Terreno:</strong> Emitir orden inmediata al Jefe de Centro y notificar al Médico Veterinario a cargo.</li>
             <li><strong className="text-white">Preparar logística de baño:</strong> Verificar stock de Peróxido de Hidrógeno o Azametifos.</li>
             <li><strong className="text-white">Notificación Normativa:</strong> Tienes 48 horas hábiles para enviar la notificación oficial a la autoridad.</li>
           </ol>
