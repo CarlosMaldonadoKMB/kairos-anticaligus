@@ -506,17 +506,6 @@ export default function RegistroConteos() {
               </p>
               <p className="text-sm text-gray-700 capitalize">{fechaFormateada}</p>
             </div>
-            <div
-              className="shrink-0"
-              title={isOnline ? 'Conectado' : 'Sin conexión'}
-              aria-label={isOnline ? 'Conectado' : 'Sin conexión'}
-            >
-              {isOnline ? (
-                <Wifi className="h-8 w-8 text-gray-900" strokeWidth={2} />
-              ) : (
-                <WifiOff className="h-8 w-8 text-red-600" strokeWidth={2} />
-              )}
-            </div>
           </Card>
 
       {/* Sección 1: Ubicación */}

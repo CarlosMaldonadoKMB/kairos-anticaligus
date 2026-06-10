@@ -2,11 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../db/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
-import { toPng } from 'html-to-image'; // <--- Nuestro nuevo motor fotográfico
+import { toPng } from 'html-to-image'; 
 import * as XLSX from 'xlsx';
+import { ContingencyModal } from './ContingencyModal'; // <--- IMPORTACIÓN DEL NUEVO MODAL
+
 import { 
-  ComposedChart, // <--- Cambiamos LineChart por ComposedChart para soportar Área y Líneas simultáneas
-  Area,          // <--- Importamos Area para la banda de confianza
+  ComposedChart, 
+  Area,      
   Line, 
   XAxis, 
   YAxis, 
@@ -17,7 +19,6 @@ import {
   ReferenceLine
 } from 'recharts';
 
-// Datos de simulación automatizada (vitrina comercial)
 const DATOS_DEMO = [
   { fecha: '25/05', HO_Real: 1.2, HO_Predicho: 1.4, centro: 'Huelmo', jaula: '101', rut_muestreador: '15344211-K', codigo_rna: '12010001', densidad_cultivo: 14.2, tratamiento: 'TN' },
   { fecha: '28/05', HO_Real: 1.8, HO_Predicho: 1.9, centro: 'Huelmo', jaula: '102', rut_muestreador: '15344211-K', codigo_rna: '12010001', densidad_cultivo: 14.2, tratamiento: 'TN' },
@@ -31,8 +32,8 @@ const Dashboard = () => {
   const reporteRef = useRef(null);
   
   // Estados originales
-  const [datosCrudos, setDatosCrudos] = useState([]); // Base de datos intocable para filtros
-  const [datosVisibles, setDatosVisibles] = useState([]); // Datos que se muestran según el filtro
+  const [datosCrudos, setDatosCrudos] = useState([]); 
+  const [datosVisibles, setDatosVisibles] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [promedioHO, setPromedioHO] = useState(0);
   const [isDemoData, setIsDemoData] = useState(false);
@@ -41,6 +42,9 @@ const Dashboard = () => {
   const [ultimaActualizacion, setUltimaActualizacion] = useState('');
   const [centroSeleccionado, setCentroSeleccionado] = useState('Todos');
   const [jaulaSeleccionada, setJaulaSeleccionada] = useState('Todas');
+
+  // [NUEVO ESTADO] Control de apertura para el Modal de Emergencia
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Variables del Algoritmo Epidemiológico Avanzado
   const [factorFH] = useState(0.4); 
@@ -89,21 +93,20 @@ const Dashboard = () => {
       if (error) throw error;
 
       if (data && data.length > 0) {
-        // 1. Extraer timestamp más reciente
         const timestampMax = new Date(Math.max(...data.map(e => new Date(e.created_at).getTime())));
         setUltimaActualizacion(`${timestampMax.toLocaleDateString()} a las ${timestampMax.getHours().toString().padStart(2, '0')}:${timestampMax.getMinutes().toString().padStart(2, '0')}h`);
 
         const datosMapeados = data.map(item => {
           const fechaObj = new Date(item.created_at);
           const hoReal = item.hembras_ovigeras != null ? Number(item.hembras_ovigeras) : null;
-          const predBase = hoReal !== null ? hoReal * 1.1 : Number(item.densidad_cultivo || 10) * 0.2; // Predicción base
+          const predBase = hoReal !== null ? hoReal * 1.1 : Number(item.densidad_cultivo || 10) * 0.2;
 
           return {
             fecha: `${fechaObj.getDate()}/${fechaObj.getMonth() + 1}`,
             HO_Real: hoReal,
             HO_Predicho: predBase,
-            Rango_Min: predBase * 0.85, // Banda baja (-15%)
-            Rango_Max: predBase * 1.15, // Banda alta (+15%)
+            Rango_Min: predBase * 0.85, 
+            Rango_Max: predBase * 1.15, 
             centro: item.centro || 'N/A',
             jaula: item.jaula || 'N/A',
             rut_muestreador: item.rut_muestreador || 'N/A',
@@ -171,40 +174,37 @@ const Dashboard = () => {
 
   const generarPDF = async () => {
     const elemento = reporteRef.current;
-    if (!elemento) return;
+    if (!element) return;
 
     const noImprimir = document.querySelectorAll('.no-imprimir');
     
     try {
-      // 1. Ocultamos los botones
       noImprimir.forEach(el => el.style.display = 'none');
 
-      // 2. Tomamos la captura con el motor moderno (soporta oklch)
       const imgData = await toPng(elemento, { 
-        pixelRatio: 2,
-        backgroundColor: '#0f172a' // Forzamos el fondo bg-slate-900 por si acaso
+        pixelRatio: 3, 
+        backgroundColor: '#0f172a'
       });
 
-      // 3. Armamos el PDF leyendo las proporciones de la nueva imagen
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF('l', 'mm', 'a4'); 
       const imgProps = pdf.getImageProperties(imgData);
       
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      const yOffset = (pdf.internal.pageSize.getHeight() - pdfHeight) / 2;
+
+      pdf.addImage(imgData, 'PNG', 0, yOffset > 0 ? yOffset : 0, pdfWidth, pdfHeight);
       pdf.save(`KAIROS_Informe_${centroSeleccionado}_${new Date().toISOString().split('T')[0]}.pdf`);
       
     } catch (error) {
       console.error('Error al generar el PDF:', error);
       alert('Hubo un error al crear el documento. Revisa la consola.');
     } finally {
-      // 4. Restauramos los botones
       noImprimir.forEach(el => el.style.display = '');
     }
   };
 
-  // Listas desplegables dinámicas
   const centrosUnicos = ['Todos', ...new Set(datosCrudos.map(d => d.centro))];
   const jaulasUnicas = ['Todas', ...new Set(datosCrudos.filter(d => centroSeleccionado === 'Todos' || d.centro === centroSeleccionado).map(d => d.jaula))];
 
@@ -225,7 +225,6 @@ const Dashboard = () => {
           )}
         </div>
         <div className="flex gap-3 no-imprimir">
-          {/* NUEVO BOTÓN: Puente hacia el formulario de terreno */}
           <button 
             onClick={() => navigate('/terreno')} 
             className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 border border-slate-700"
@@ -248,7 +247,7 @@ const Dashboard = () => {
       {/* CONTENEDOR ANALÍTICO PRINCIPAL */}
       <main className="max-w-7xl mx-auto px-8 mt-8 space-y-6">
         
-        {/* BARRA DE FILTROS Y TIMESTAMP (Mejora 1 y 2) */}
+        {/* BARRA DE FILTROS Y TIMESTAMP */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 bg-slate-950/50 p-4 rounded-xl border border-slate-800">
           <div className="flex gap-4">
             <div>
@@ -282,14 +281,20 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* SEMÁFORO ESCALONADO (Mejora 3) */}
+        {/* SEMÁFORO ESCALONADO CON CONEXIÓN AL MODAL */}
         {irkAcumulado >= 2.0 || promedioHO >= 3.0 ? (
           <div className="bg-red-950/40 border-2 border-red-700/60 rounded-xl p-4 flex items-center justify-between animate-pulse">
             <div>
               <h3 className="text-red-400 font-black text-lg">ALERTA CRÍTICA: RIESGO DE NOTIFICACIÓN SANITARIA</h3>
               <p className="text-red-300/80 text-sm mt-0.5">Límites normativos o algoritmos predictivos superados. Activar planes de contingencia inmediatamente.</p>
             </div>
-            <span className="bg-red-600 text-white px-3 py-1 rounded text-xs font-black">ACCIÓN URGENTE</span>
+            {/* Convertido de span a button interactivo */}
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-red-600 hover:bg-red-500 cursor-pointer text-white px-4 py-2 rounded text-xs font-black transition-colors shadow-lg shadow-red-600/30 no-imprimir"
+            >
+              ACCIÓN URGENTE
+            </button>
           </div>
         ) : irkAcumulado > 0.8 ? (
           <div className="bg-amber-950/40 border border-amber-700/60 rounded-xl p-4 flex items-center justify-between">
@@ -334,19 +339,20 @@ const Dashboard = () => {
             <div className="mt-2 text-xs text-slate-500">Estatus: <span className="font-bold">Presión por cercanía</span></div>
           </div>
 
-          <div className={`p-5 rounded-xl border-2 shadow-lg ${irkAcumulado > 0.8 ? 'bg-amber-950/20 border-amber-600 shadow-amber-500/5' : 'bg-gradient-to-br from-slate-950 to-blue-950/20 border-blue-600 shadow-blue-500/5'}`}>
-            <span className={`text-xs font-bold uppercase tracking-widest block mb-1 ${irkAcumulado > 0.8 ? 'text-amber-400' : 'text-blue-400'}`}>Índice de Riesgo ($IRK$)</span>
+          {/* SINCRONIZACIÓN DEL ALGORITMO: Tarjeta IRK pasa a Crítico/Rojo si promedioHO >= 3.0 */}
+          <div className={`p-5 rounded-xl border-2 shadow-lg transition-all ${promedioHO >= 3.0 ? 'bg-red-950/20 border-red-600 shadow-red-500/5' : irkAcumulado > 0.8 ? 'bg-amber-950/20 border-amber-600 shadow-amber-500/5' : 'bg-gradient-to-br from-slate-950 to-blue-950/20 border-blue-600 shadow-blue-500/5'}`}>
+            <span className={`text-xs font-bold uppercase tracking-widest block mb-1 ${promedioHO >= 3.0 ? 'text-red-400' : irkAcumulado > 0.8 ? 'text-amber-400' : 'text-blue-400'}`}>Índice de Riesgo ($IRK$)</span>
             <div className="flex items-baseline gap-2">
               <span className="text-4xl font-black text-white">{irkAcumulado}</span>
-              <span className={`text-xs px-2 py-0.5 rounded font-black ${irkAcumulado >= 2.0 ? 'bg-red-500 text-white' : irkAcumulado > 0.8 ? 'bg-amber-500 text-amber-950' : 'bg-blue-500/20 text-blue-400'}`}>
-                {irkAcumulado >= 2.0 ? 'Alto' : irkAcumulado > 0.8 ? 'Medio' : 'Moderado'}
+              <span className={`text-xs px-2 py-0.5 rounded font-black ${promedioHO >= 3.0 ? 'bg-red-600 text-white' : irkAcumulado >= 2.0 ? 'bg-red-500 text-white' : irkAcumulado > 0.8 ? 'bg-amber-500 text-amber-950' : 'bg-blue-500/20 text-blue-400'}`}>
+                {promedioHO >= 3.0 ? 'Crítico' : irkAcumulado >= 2.0 ? 'Alto' : irkAcumulado > 0.8 ? 'Medio' : 'Moderado'}
               </span>
             </div>
-            <div className={`mt-2 text-xs font-mono ${irkAcumulado > 0.8 ? 'text-amber-400/70' : 'text-blue-400/70'}`}>Simulación Estructurada</div>
+            <div className={`mt-2 text-xs font-mono ${promedioHO >= 3.0 ? 'text-red-400/70' : irkAcumulado > 0.8 ? 'text-amber-400/70' : 'text-blue-400/70'}`}>Simulación Estructurada</div>
           </div>
         </div>
 
-        {/* ÁREA DE GRÁFICA PREDICTIVA CON BANDA DE CONFIANZA (Mejora 4) */}
+        {/* ÁREA DE GRÁFICA PREDICTIVA CON BANDA DE CONFIANZA */}
         <div className="bg-slate-950 p-6 rounded-xl border border-slate-800">
           <div className="flex justify-between items-center mb-6">
             <div>
@@ -367,7 +373,6 @@ const Dashboard = () => {
 
           <div className="h-96 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              {/* ComposedChart permite combinar Area (bandas) y Line (curvas) */}
               <ComposedChart data={datosVisibles} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis dataKey="fecha" stroke="#64748b" fontSize={12} tickLine={false} />
@@ -379,15 +384,10 @@ const Dashboard = () => {
                 <Legend verticalAlign="hidden" />
                 <ReferenceLine y={3.0} stroke="#b91c1c" strokeDasharray="4 4" label={{ value: 'Umbral Sernapesca (3.0 HO)', fill: '#ef4444', position: 'top', fontSize: 11, fontWeight: 'bold' }} />
                 
-                {/* 1. La Banda de Confianza Sombreada */}
                 <Area type="monotone" dataKey="Rango_Max" stroke="none" fill="#f59e0b" fillOpacity={0.15} />
-                {/* 2. El "recorte" de la parte inferior para que flote la banda. Usamos el mismo color de fondo del chart (#020617) */}
                 <Area type="monotone" dataKey="Rango_Min" stroke="none" fill="#020617" fillOpacity={1} />
                 
-                {/* 3. Línea sólida de terreno */}
                 <Line name="HO Real" type="monotone" dataKey="HO_Real" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6' }} activeDot={{ r: 7 }} />
-                
-                {/* 4. Línea punteada de predicción media */}
                 <Line name="Proyección Modelada" type="monotone" dataKey="HO_Predicho" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: '#f59e0b' }} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -395,6 +395,14 @@ const Dashboard = () => {
         </div>
 
       </main>
+
+      {/* RENDERIZADO DEL MODAL DE CONTINGENCIA DEBAJO DE TODO EL CONTENIDO */}
+      <ContingencyModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        centro={centroSeleccionado} 
+      />
+
     </div>
   );
 };
